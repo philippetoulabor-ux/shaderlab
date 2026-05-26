@@ -18,7 +18,13 @@
 
         <div class="buttons">
           <button id="randomizeBtn">Randomize</button>
-          <button id="exportBtn">Export Config</button>
+          <div class="exportDropdown">
+            <button id="exportBtn" aria-haspopup="menu" aria-expanded="false">Export</button>
+            <div id="exportMenu" class="exportMenu" role="menu" aria-label="Export menu" hidden>
+              <button type="button" class="exportMenuItem" role="menuitem" data-export-action="copyShaderCode">Shader-Code kopieren</button>
+              <button type="button" class="exportMenuItem" role="menuitem" data-export-action="exportVideo">Video exportieren</button>
+            </div>
+          </div>
         </div>
 
         <details>

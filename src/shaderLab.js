@@ -172,6 +172,33 @@ export class ShaderLab {
     }
   }
 
+  getTime(){
+    return this.sharedUniforms?.uTime?.value ?? 0;
+  }
+
+  setTime(t){
+    const v = Number(t) || 0;
+    if(this.sharedUniforms?.uTime) this.sharedUniforms.uTime.value = v;
+    if(this.material?.uniforms?.uTime) this.material.uniforms.uTime.value = v;
+  }
+
+  /**
+   * Returns shader source + metadata + current uniform values for copy/export.
+   */
+  getShaderSourceBundle(){
+    const entry = this.currentShaderEntry;
+    const cfg = this.getConfig();
+    return {
+      shaderId: cfg.shaderId,
+      name: entry?.name || cfg.shaderId,
+      description: entry?.description || '',
+      vertex: entry?.vertex || '',
+      fragment: entry?.fragment || '',
+      uniformsMeta: entry?.uniforms || [],
+      uniformsCurrent: cfg.uniforms || {}
+    };
+  }
+
   /**
    * Return a plain JSON-serializable config for the current shader + uniforms.
    */

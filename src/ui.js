@@ -11,24 +11,25 @@
  *  - onLoadShader(id)
  *  - onSetUniform(name, value)
  *  - onRandomize()
- *  - onExport()
+ *  - onExportAction(actionId)
  *
  * The UI is intentionally modular and does not access WebGL internals.
  */
 
 export class UI {
-  constructor({ shaderList = [], onLoadShader, onSetUniform, onRandomize, onExport } = {}){
+  constructor({ shaderList = [], onLoadShader, onSetUniform, onRandomize, onExportAction } = {}){
     this.shaderList = shaderList;
     this.onLoadShader = onLoadShader;
     this.onSetUniform = onSetUniform;
     this.onRandomize = onRandomize;
-    this.onExport = onExport;
+    this.onExportAction = onExportAction;
 
     this.shaderSelect = document.getElementById('shaderSelect');
     this.uniformControls = document.getElementById('uniformControls');
     this.shaderDesc = document.getElementById('shaderDesc');
     this.randomizeBtn = document.getElementById('randomizeBtn');
     this.exportBtn = document.getElementById('exportBtn');
+    this.exportMenu = document.getElementById('exportMenu');
 
     this._populateShaderList();
     this._attachListeners();
@@ -62,8 +63,36 @@ export class UI {
       this.onRandomize && this.onRandomize();
     });
 
-    this.exportBtn.addEventListener('click', () => {
-      this.onExport && this.onExport();
+    const closeMenu = () => {
+      if(!this.exportMenu) return;
+      this.exportMenu.hidden = true;
+      this.exportBtn?.setAttribute('aria-expanded', 'false');
+    };
+
+    const toggleMenu = () => {
+      if(!this.exportMenu) return;
+      const willOpen = this.exportMenu.hidden;
+      this.exportMenu.hidden = !willOpen;
+      this.exportBtn?.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    };
+
+    this.exportBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMenu();
+    });
+
+    this.exportMenu?.addEventListener('click', (e) => {
+      const btn = e.target?.closest?.('[data-export-action]');
+      if(!btn) return;
+      const actionId = btn.getAttribute('data-export-action');
+      closeMenu();
+      this.onExportAction && this.onExportAction(actionId);
+    });
+
+    document.addEventListener('click', () => closeMenu());
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape') closeMenu();
     });
   }
 
