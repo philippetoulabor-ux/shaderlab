@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shader Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="panel">
+      <h1>Shader Lab</h1>
+      <div class="controls">
+        <label for="shaderSelect">Shader</label>
+        <select id="shaderSelect"></select>
+
+        <div id="uniformControls"></div>
+
+        <div class="buttons">
+          <button id="randomizeBtn">Randomize</button>
+          <button id="exportBtn">Export Config</button>
+        </div>
+
+        <details>
+          <summary>Info</summary>
+          <p id="shaderDesc"></p>
+        </details>
+      </div>
+    </aside>
+
+    <main id="canvasWrap">
+      <!-- Three.js canvas will be appended here -->
+    </main>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
