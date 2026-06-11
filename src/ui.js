@@ -2,24 +2,23 @@
  * ui.js
  *
  * Minimal UI implementation using plain DOM APIs.
- * Responsibilities:
- *  - render shader selection dropdown
- *  - create uniform controls dynamically based on metadata
- *  - forward user changes to callbacks
- *
- * Expects an object with callbacks:
- *  - onLoadShader(id)
- *  - onSetUniform(name, value)
- *  - onRandomize()
- *  - onExportAction(actionId)
- *
- * The UI is intentionally modular and does not access WebGL internals.
  */
 
+const CUSTOM_MAIN_IMAGE_KEY = 'shaderlab.custom.mainImage';
+const CUSTOM_CHANNEL_URL_KEYS = [
+  'shaderlab.custom.channel0',
+  'shaderlab.custom.channel1',
+  'shaderlab.custom.channel2',
+  'shaderlab.custom.channel3',
+];
+const CUSTOM_DEBOUNCE_MS = 600;
+
 export class UI {
-  constructor({ shaderList = [], onLoadShader, onSetUniform, onRandomize, onExportAction } = {}){
+  constructor({ shaderList = [], onLoadShader, onLoadMainImage, onSetChannelURL, onSetUniform, onRandomize, onExportAction } = {}){
     this.shaderList = shaderList;
     this.onLoadShader = onLoadShader;
+    this.onLoadMainImage = onLoadMainImage;
+    this.onSetChannelURL = onSetChannelURL;
     this.onSetUniform = onSetUniform;
     this.onRandomize = onRandomize;
     this.onExportAction = onExportAction;
@@ -30,11 +29,23 @@ export class UI {
     this.randomizeBtn = document.getElementById('randomizeBtn');
     this.exportBtn = document.getElementById('exportBtn');
     this.exportMenu = document.getElementById('exportMenu');
+    this.customShaderPanel = document.getElementById('customShaderPanel');
+    this.customMainImage = document.getElementById('customMainImage');
+    this.shaderCompileError = document.getElementById('shaderCompileError');
+    this.channelUrlInputs = [
+      document.getElementById('channel0Url'),
+      document.getElementById('channel1Url'),
+      document.getElementById('channel2Url'),
+      document.getElementById('channel3Url'),
+    ];
+
+    this._customDebounceTimer = null;
+    this._channelDebounceTimer = null;
 
     this._populateShaderList();
     this._attachListeners();
+    this._showCustomPanel(false);
 
-    // keep a small map of control elements to update values later
     this.controls = new Map();
   }
 
@@ -46,9 +57,106 @@ export class UI {
       opt.textContent = s.name;
       this.shaderSelect.appendChild(opt);
     }
-    // Set description for first
     this.shaderDesc.textContent = this.shaderList[0]?.description || '';
     this.shaderSelect.value = this.shaderList[0]?.id || '';
+  }
+
+  _isCustomMode(){
+    return this.shaderSelect?.value === 'new';
+  }
+
+  _getNewShaderEntry(){
+    return this.shaderList.find(s => s.id === 'new');
+  }
+
+  _readStored(key, fallback){
+    try {
+      const stored = localStorage.getItem(key);
+      if(stored !== null && stored !== '') return stored;
+    } catch (_) { /* ignore */ }
+    return fallback;
+  }
+
+  _persistCustomSources(){
+    try {
+      localStorage.setItem(CUSTOM_MAIN_IMAGE_KEY, this.customMainImage.value);
+      this.channelUrlInputs.forEach((input, i) => {
+        if(input) localStorage.setItem(CUSTOM_CHANNEL_URL_KEYS[i], input.value);
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  _fillCustomTextareasFromTemplate(){
+    const entry = this._getNewShaderEntry();
+    const defaultMain = (entry?.mainImage || '').trim();
+    this.customMainImage.value = this._readStored(CUSTOM_MAIN_IMAGE_KEY, defaultMain);
+    this.channelUrlInputs.forEach((input, i) => {
+      if(!input) return;
+      input.value = this._readStored(CUSTOM_CHANNEL_URL_KEYS[i], '');
+    });
+  }
+
+  _showCustomPanel(show){
+    if(!this.customShaderPanel) return;
+    this.customShaderPanel.classList.toggle('is-visible', show);
+    this.customShaderPanel.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  _scheduleCustomCompile(){
+    clearTimeout(this._customDebounceTimer);
+    this._customDebounceTimer = setTimeout(() => {
+      if(!this._isCustomMode()) return;
+      this._persistCustomSources();
+      this.onLoadMainImage && this.onLoadMainImage(this.customMainImage.value);
+    }, CUSTOM_DEBOUNCE_MS);
+  }
+
+  _scheduleChannelReload(){
+    clearTimeout(this._channelDebounceTimer);
+    this._channelDebounceTimer = setTimeout(() => {
+      if(!this._isCustomMode()) return;
+      this._persistCustomSources();
+      this.channelUrlInputs.forEach((input, i) => {
+        if(!input || !this.onSetChannelURL) return;
+        this.onSetChannelURL(i, input.value);
+      });
+    }, 400);
+  }
+
+  _enterCustomMode(){
+    this._showCustomPanel(true);
+    this._fillCustomTextareasFromTemplate();
+    this.setCompileError(null);
+    this.onLoadShader && this.onLoadShader('new');
+    this.onLoadMainImage && this.onLoadMainImage(this.customMainImage.value);
+    this.channelUrlInputs.forEach((input, i) => {
+      if(input && this.onSetChannelURL) this.onSetChannelURL(i, input.value);
+    });
+  }
+
+  _exitCustomMode(){
+    this._showCustomPanel(false);
+    this.setCompileError(null);
+    clearTimeout(this._customDebounceTimer);
+    clearTimeout(this._channelDebounceTimer);
+  }
+
+  setCompileError(message){
+    if(!this.shaderCompileError) return;
+    if(message){
+      this.shaderCompileError.hidden = false;
+      this.shaderCompileError.textContent = message;
+    } else {
+      this.shaderCompileError.hidden = true;
+      this.shaderCompileError.textContent = '';
+    }
+  }
+
+  getCustomSources(){
+    return {
+      mainImage: this.customMainImage?.value || '',
+      channelUrls: this.channelUrlInputs.map((el) => el?.value || ''),
+    };
   }
 
   _attachListeners(){
@@ -56,8 +164,27 @@ export class UI {
       const id = e.target.value;
       const entry = this.shaderList.find(s => s.id === id);
       this.shaderDesc.textContent = entry?.description || '';
+
+      if(id === 'new'){
+        this._enterCustomMode();
+        return;
+      }
+
+      this._exitCustomMode();
       this.onLoadShader && this.onLoadShader(id);
     });
+
+    this.customMainImage?.addEventListener('input', () => {
+      if(!this._isCustomMode()) return;
+      this._scheduleCustomCompile();
+    });
+
+    for(const input of this.channelUrlInputs){
+      input?.addEventListener('change', () => {
+        if(!this._isCustomMode()) return;
+        this._scheduleChannelReload();
+      });
+    }
 
     this.randomizeBtn.addEventListener('click', () => {
       this.onRandomize && this.onRandomize();
@@ -143,10 +270,6 @@ export class UI {
     return { wrapper, slider, numInput };
   }
 
-  /**
-   * Receives an array of uniforms metadata (with current value) and builds/upates controls.
-   * @param {Array} uniforms
-   */
   updateControls(uniforms){
     this.uniformControls.innerHTML = '';
     this.controls.clear();
@@ -175,7 +298,6 @@ export class UI {
         row.appendChild(wrapper);
         this.controls.set(u.name, { slider, input: numInput });
       } else {
-        // fallback: show text input
         const input = document.createElement('input');
         input.type = 'text';
         input.value = u.value ?? '';
@@ -188,9 +310,6 @@ export class UI {
     }
   }
 
-  /**
-   * Apply a config object (from ShaderLab.randomizeCurrentConfig()) back to the UI controls.
-   */
   applyConfig(cfg){
     if(!cfg || !cfg.uniforms) return;
     for(const k in cfg.uniforms){

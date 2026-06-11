@@ -361,6 +361,18 @@ const SHADER_DEFS = {
             cool: { uColor1: [0.4, 1.0, 0.9], uColor2: [0.2, 0.5, 1.0], uColor3: [0.1, 0.2, 0.6], uColor4: [0.5, 0.0, 0.5], uSpeed: 0.15 },
             pastel: { uColor1: [1.0, 0.9, 0.9], uColor2: [0.9, 1.0, 0.9], uColor3: [0.9, 0.9, 1.0], uColor4: [1.0, 1.0, 0.8], uSpeed: 0.1 }
         }
+    },
+
+    // Shadertoy-style editor (mainImage only; WebGL2 path in shadertoy.js)
+    new: {
+        name: 'NEW',
+        description: 'Shadertoy-Modus: nur mainImage() schreiben. Uniforms: iResolution, iTime, iMouse, iChannel0–3, iDate, …',
+        mainImage: `void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    vec2 uv = fragCoord / iResolution.xy;
+    vec3 col = vec3(.5) + vec3(.5) * cos(iTime + uv.xyx + vec3(.0, 2., 4.));
+    fragColor = vec4(col, 1.);
+}`,
+        uniforms: {}
     }
 };
 

@@ -14,6 +14,22 @@
         <label for="shaderSelect">Shader</label>
         <select id="shaderSelect"></select>
 
+        <div id="customShaderPanel" aria-hidden="true">
+          <label for="customMainImage">mainImage (GLSL ES 3.00)</label>
+          <textarea id="customMainImage" spellcheck="false" rows="14"></textarea>
+          <div id="channelInputs" class="channel-inputs">
+            <label for="channel0Url">iChannel0 URL</label>
+            <input type="url" id="channel0Url" placeholder="https://…" autocomplete="off" />
+            <label for="channel1Url">iChannel1 URL</label>
+            <input type="url" id="channel1Url" placeholder="https://…" autocomplete="off" />
+            <label for="channel2Url">iChannel2 URL</label>
+            <input type="url" id="channel2Url" placeholder="https://…" autocomplete="off" />
+            <label for="channel3Url">iChannel3 URL</label>
+            <input type="url" id="channel3Url" placeholder="https://…" autocomplete="off" />
+          </div>
+          <pre id="shaderCompileError" hidden></pre>
+        </div>
+
         <div id="uniformControls"></div>
 
         <div class="buttons">

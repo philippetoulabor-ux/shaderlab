@@ -52,24 +52,42 @@ async function init(){
   // Create UI and link it to the lab
   const ui = new UI({
     shaderList: SHADERS,
-    onLoadShader: (id) => lab.loadShader(id),
+    onLoadShader: (id) => {
+      if(id === 'new'){
+        lab.loadShader('new');
+        return;
+      }
+      lab.loadShader(id);
+    },
+    onLoadMainImage: (mainImageSource) => {
+      const result = lab.loadMainImage(mainImageSource);
+      ui.setCompileError(result.ok ? null : result.log);
+      if(result.ok) lab.onUniformChanged?.([]);
+    },
+    onSetChannelURL: (index, url) => lab.setChannelURL(index, url),
     onSetUniform: (name, value) => lab.setUniform(name, value),
     onRandomize: () => ui.applyConfig(lab.randomizeCurrentConfig()),
     onExportAction: async (actionId) => {
       if(actionId === 'copyShaderCode'){
         const bundle = lab.getShaderSourceBundle();
-        const payload = [
+        if(lab.currentShaderId === 'new'){
+          const custom = ui.getCustomSources();
+          bundle.userMainImage = custom.mainImage;
+        }
+        const parts = [
           `// ShaderLab export: ${bundle.name} (${bundle.shaderId})`,
           '',
-          '// vertex.glsl',
+          '// vertex.glsl (fixed Shadertoy quad)',
           bundle.vertex,
           '',
-          '// fragment.glsl',
-          bundle.fragment,
-          '',
-          '// uniforms (current values)',
-          JSON.stringify(bundle.uniformsCurrent, null, 2)
-        ].join('\n');
+        ];
+        if(bundle.userMainImage != null){
+          parts.push('// mainImage (user)', bundle.userMainImage, '', '// full compiled fragment.glsl', bundle.fragment, '');
+        } else {
+          parts.push('// fragment.glsl', bundle.fragment, '');
+        }
+        parts.push('// uniforms (current values)', JSON.stringify(bundle.uniformsCurrent, null, 2));
+        const payload = parts.join('\n');
 
         try {
           await navigator.clipboard.writeText(payload);
@@ -90,7 +108,7 @@ async function init(){
 
         const fps = 60;
         const durationMs = 5000;
-        const canvas = lab.renderer?.domElement;
+        const canvas = lab.getActiveCanvas();
         if(!canvas?.captureStream){
           alert('Video export not supported (canvas.captureStream unavailable).');
           return;

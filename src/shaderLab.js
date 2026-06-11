@@ -18,6 +18,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+import { ShadertoyRenderer } from './shadertoy.js';
 
 export class ShaderLab {
   /**
@@ -56,11 +57,35 @@ export class ShaderLab {
     this._resizeHandler = this._onWindowResize.bind(this);
     window.addEventListener('resize', this._resizeHandler);
 
+    // WebGL2 Shadertoy path (used when shader id === 'new')
+    this.shadertoy = new ShadertoyRenderer(container);
+    this.shadertoy.hide();
+    this._shadertoyActive = false;
+
     // Setup initial shader
     this.mesh = null;
     this._animate = this._animate.bind(this);
 
     this.loadShader(initialShaderId);
+  }
+
+  /** Canvas used for export / capture (Three.js or Shadertoy). */
+  getActiveCanvas(){
+    if(this._shadertoyActive) return this.shadertoy.domElement;
+    return this.renderer.domElement;
+  }
+
+  _setShadertoyMode(active){
+    this._shadertoyActive = active;
+    if(active){
+      this.renderer.domElement.style.display = 'none';
+      this.shadertoy.show();
+      this.shadertoy.start();
+    } else {
+      this.shadertoy.stop();
+      this.shadertoy.hide();
+      this.renderer.domElement.style.display = 'block';
+    }
   }
 
   start(){
@@ -71,13 +96,16 @@ export class ShaderLab {
 
   _animate(){
     if(!this._running) return;
-    const dt = this.clock.getDelta();
-    this.sharedUniforms.uTime.value += dt;
-    if(this.material && this.material.uniforms && this.material.uniforms.uTime){
-      this.material.uniforms.uTime.value = this.sharedUniforms.uTime.value;
+
+    if(!this._shadertoyActive){
+      const dt = this.clock.getDelta();
+      this.sharedUniforms.uTime.value += dt;
+      if(this.material && this.material.uniforms && this.material.uniforms.uTime){
+        this.material.uniforms.uTime.value = this.sharedUniforms.uTime.value;
+      }
+      this.renderer.render(this.scene, this.camera);
     }
 
-    this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(this._animate);
   }
 
@@ -99,6 +127,16 @@ export class ShaderLab {
     if(!entry) {
       console.warn('Shader not found:', id); return;
     }
+
+    if(id === 'new'){
+      this._setShadertoyMode(true);
+      this.currentShaderId = 'new';
+      this.currentShaderEntry = entry;
+      this._notifyUniforms();
+      return { ok: true, log: '' };
+    }
+
+    this._setShadertoyMode(false);
 
     // Build uniforms: merge shared + shader-specific
     const uniforms = Object.assign({}, this.sharedUniforms);
@@ -144,6 +182,103 @@ export class ShaderLab {
   }
 
   /**
+   * WebGLProgram for a material (Three r152 stores it on renderer.properties, not material.program).
+   */
+  _getCompiledProgram(mat){
+    const props = this.renderer.properties?.get(mat);
+    return props?.currentProgram ?? null;
+  }
+
+  /**
+   * Compile-check a shader material without permanently swapping it in.
+   * @returns {{ ok: boolean, log: string }}
+   */
+  _compileCheckMaterial(mat){
+    if(!this.mesh){
+      this.mesh = new THREE.Mesh(this.geometry, mat);
+      this.scene.add(this.mesh);
+    }
+
+    const prev = this.mesh.material;
+    this.mesh.material = mat;
+
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      let webglProgram = this._getCompiledProgram(mat);
+      if(!webglProgram?.program){
+        this.renderer.render(this.scene, this.camera);
+        webglProgram = this._getCompiledProgram(mat);
+      }
+
+      const gl = this.renderer.getContext();
+      const logs = [];
+
+      if(!webglProgram?.program){
+        this.mesh.material = prev;
+        return { ok: false, log: 'Shader konnte nicht kompiliert werden.' };
+      }
+
+      if(webglProgram.vertexShader && !gl.getShaderParameter(webglProgram.vertexShader, gl.COMPILE_STATUS)){
+        const vLog = gl.getShaderInfoLog(webglProgram.vertexShader);
+        logs.push('Vertex:\n' + (vLog?.trim() || 'compile failed'));
+      }
+      if(webglProgram.fragmentShader && !gl.getShaderParameter(webglProgram.fragmentShader, gl.COMPILE_STATUS)){
+        const fLog = gl.getShaderInfoLog(webglProgram.fragmentShader);
+        logs.push('Fragment:\n' + (fLog?.trim() || 'compile failed'));
+      }
+      if(!gl.getProgramParameter(webglProgram.program, gl.LINK_STATUS)){
+        const pLog = gl.getProgramInfoLog(webglProgram.program);
+        logs.push('Program:\n' + (pLog?.trim() || 'link failed'));
+      }
+
+      this.mesh.material = prev;
+
+      if(logs.length > 0){
+        return { ok: false, log: logs.join('\n\n') };
+      }
+      return { ok: true, log: '' };
+    } catch (e) {
+      this.mesh.material = prev;
+      return { ok: false, log: String(e?.message || e) };
+    }
+  }
+
+  /**
+   * Load user mainImage source (Shadertoy NEW mode).
+   * @param {string} mainImageSource
+   * @returns {{ ok: boolean, log: string, fullFragmentSource?: string }}
+   */
+  loadMainImage(mainImageSource){
+    if(!this._shadertoyActive){
+      this._setShadertoyMode(true);
+    }
+    this.currentShaderId = 'new';
+    const entry = this.shaderRegistry.find(s => s.id === 'new');
+    this.currentShaderEntry = entry || {
+      id: 'new',
+      name: 'NEW',
+      description: 'Shadertoy-style shader',
+      mainImage: mainImageSource,
+      uniforms: [],
+    };
+
+    const result = this.shadertoy.loadMainImage(mainImageSource);
+    if(result.ok){
+      this._notifyUniforms();
+    }
+    return result;
+  }
+
+  /**
+   * Bind a texture URL to iChannel0…3.
+   * @param {number} index
+   * @param {string} url
+   */
+  setChannelURL(index, url){
+    return this.shadertoy.setChannelURL(index, url);
+  }
+
+  /**
    * Set a uniform value at runtime without rebuilding the material.
    * Color inputs may be strings like "#ff00aa" or THREE.Color.
    * @param {string} name
@@ -173,11 +308,16 @@ export class ShaderLab {
   }
 
   getTime(){
+    if(this._shadertoyActive) return this.shadertoy.getTime();
     return this.sharedUniforms?.uTime?.value ?? 0;
   }
 
   setTime(t){
     const v = Number(t) || 0;
+    if(this._shadertoyActive){
+      this.shadertoy.setTime(v);
+      return;
+    }
     if(this.sharedUniforms?.uTime) this.sharedUniforms.uTime.value = v;
     if(this.material?.uniforms?.uTime) this.material.uniforms.uTime.value = v;
   }
@@ -188,6 +328,21 @@ export class ShaderLab {
   getShaderSourceBundle(){
     const entry = this.currentShaderEntry;
     const cfg = this.getConfig();
+
+    if(this._shadertoyActive){
+      const st = this.shadertoy.getShaderSourceBundle();
+      return {
+        shaderId: 'new',
+        name: entry?.name || 'NEW',
+        description: entry?.description || '',
+        vertex: st.vertex,
+        userMainImage: st.userMainImage,
+        fragment: st.fullFragment,
+        uniformsMeta: [],
+        uniformsCurrent: {},
+      };
+    }
+
     return {
       shaderId: cfg.shaderId,
       name: entry?.name || cfg.shaderId,
@@ -281,6 +436,7 @@ export class ShaderLab {
   dispose(){
     this._running = false;
     window.removeEventListener('resize', this._resizeHandler);
+    this.shadertoy?.dispose();
     if(this.mesh){
       if(this.mesh.material) this.mesh.material.dispose();
       this.scene.remove(this.mesh);
